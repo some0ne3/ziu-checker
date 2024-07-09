@@ -247,17 +247,13 @@ func formatResult(result []Result) string {
 				}
 				if i == 0 {
 					message += fmt.Sprintf("# %s\n", s.Nazwa)
-					message += fmt.Sprintf("Placówka: %s\n", s.PlacowkaNazwa)
 				}
-				message += fmt.Sprintf("## Egzamin: %s (poz. %s) (%s)\n", w.EgzaminWSesji.Egzamin.Nazwa,
-					w.EgzaminWSesji.Egzamin.PoziomZdawania.Nazwa,
+				message += fmt.Sprintf("## Egzamin: %s (%s)\n", w.EgzaminWSesji.Egzamin.Nazwa,
 					w.EgzaminWSesji.Egzamin.FormaZdawania.Nazwa)
 				message += fmt.Sprintf("Data wydania dokumentu: %s\n", time.Unix(int64(w.DataWydania), 0).Format("2006-01-02 15:04:05"))
 				message += fmt.Sprintf("Numer wydanego dokumentu: **%s**\n", w.NumerWydanegoDokumentu)
 				message += fmt.Sprintf("Data egzaminu: %s\n", time.Unix(int64(w.EgzaminWSesji.Termin), 0).Format("2006-01-02 15:04:05"))
-				message += fmt.Sprintf("Kod arkusza: %s\n", w.KodArkusza)
-				message += fmt.Sprintf("Centyle: %d\n", w.Centyle)
-				message += fmt.Sprintf("\n**Procent: %d**\n\n", w.Procent)
+				message += fmt.Sprintf("\n**Wynik: %d%% **\n\n", w.Procent)
 				message += fmt.Sprintf("Punkty: %.2f/%.2f\n", w.UzyskanePunkty, w.MaxPunkty)
 				message += "\n"
 
@@ -266,6 +262,14 @@ func formatResult(result []Result) string {
 		}
 	}
 	return message
+}
+
+type Embed struct {
+	Description string `json:"description"`
+}
+
+type Payload struct {
+	Embeds []Embed `json:"embeds"`
 }
 
 func sendToDiscord(webhookURL, message string, jsonData string) (err error) {
@@ -289,21 +293,30 @@ func sendToDiscord(webhookURL, message string, jsonData string) (err error) {
 		}
 		filesIndex++
 	}
-	if len(message) > 2000 {
-		part, err := writer.CreateFormFile(fmt.Sprintf("files[%d]", filesIndex), "message.txt")
-		if err != nil {
-			return err
+
+	payload := Payload{
+		Embeds: []Embed{},
+	}
+
+	messageParts := []string{""}
+	for _, line := range strings.Split(message, "\n") {
+		if len(messageParts[len(messageParts)-1])+len(line) > 2000 {
+			messageParts = append(messageParts, "")
 		}
-		_, err = part.Write([]byte(jsonData))
-		if err != nil {
-			return err
-		}
-		filesIndex++
-	} else {
-		err = writer.WriteField("content", message)
-		if err != nil {
-			return err
-		}
+		messageParts[len(messageParts)-1] += line + "\n"
+	}
+
+	for _, part := range messageParts {
+		payload.Embeds = append(payload.Embeds, Embed{Description: part})
+	}
+
+	marshalled, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	err = writer.WriteField("payload_json", string(marshalled))
+	if err != nil {
+		return err
 	}
 
 	err = writer.Close()
